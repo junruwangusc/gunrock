@@ -94,7 +94,7 @@ cudaError_t Compensate_ZeroDegrees(GraphT &graph, bool quiet = false) {
   CooT new_coo;
   GUARD_CU(new_coo.Allocate(graph_coo.nodes + 1,
                             graph_coo.edges + counter + graph_coo.nodes,
-                            util::HOST));
+                            util::HOST | util::DEVICE));
   GUARD_CU(new_coo.edge_pairs.ForEach(
       graph_coo.edge_pairs,
       [] __host__ __device__(EdgePairT & new_pair, const EdgePairT &old_pair) {
@@ -250,17 +250,17 @@ double CPU_Reference(util::Parameters &parameters, const GraphT &graph,
   ValueT *rev_degrees = (ValueT *)malloc(sizeof(ValueT) * nodes);
   bool to_continue = true;
   SizeT iteration = 0;
-  ValueT init_value =
-      normalize ? (scale ? 1.0 : (1.0 / (ValueT)nodes)) : (1.0 - delta);
-  ValueT reset_value =
-      normalize ? (scale ? (1.0 - delta) : ((1.0 - delta) / (ValueT)nodes))
-                : (1.0 - delta);
+  ValueT init_value = 1;
+      //normalize ? (scale ? 1.0 : (1.0 / (ValueT)nodes)) : (1.0 - delta);
+  ValueT reset_value = 1;
+      //normalize ? (scale ? (1.0 - delta) : ((1.0 - delta) / (ValueT)nodes))
+      //          : (1.0 - delta);
   util::CpuTimer cpu_timer;
 
 #pragma omp parallel for
   for (VertexT v = 0; v < nodes; v++) {
     rank_current[v] = init_value;
-    rank_next[v] = normalize ? 0.0 : (1.0 - delta);
+    rank_next[v] = (ValueT)(normalize ? 0.0 : (1.0 - delta));
     rev_degrees[v] = 0;
   }
 
@@ -282,23 +282,23 @@ double CPU_Reference(util::Parameters &parameters, const GraphT &graph,
       auto &edge_pair = graph.CooT::edge_pairs[e];
       auto &src = edge_pair.x;
       auto &dest = edge_pair.y;
-      ValueT dist_rank = rank_current[src] * rev_degrees[src];
-      if (!isfinite(dist_rank)) continue;
+      ValueT dist_rank = rank_current[src];
+      //if (!isfinite(dist_rank)) continue;
 #pragma omp atomic
-      rank_next[dest] += dist_rank;
+      rank_next[dest] ^= dist_rank;
     }
-    to_continue = false;
+    //to_continue = false;
     iteration++;
 
 #pragma omp parallel for
     for (VertexT v = 0; v < nodes; v++) {
-      ValueT rank_new = delta * rank_next[v];
-      if (!isfinite(rank_new)) rank_new = 0;
-      rank_new = rank_new + reset_value;
-      if (iteration <= max_iter &&
-          fabs(rank_new - rank_current[v]) > threshold * rank_current[v]) {
-        to_continue = true;
-      }
+      ValueT rank_new = rank_next[v];
+      //if (!isfinite(rank_new)) rank_new = 0;
+      //rank_new = rank_new + reset_value;
+      //if (iteration <= max_iter &&
+      //    fabs(rank_new - rank_current[v]) > threshold * rank_current[v]) {
+      //  to_continue = true;
+      //}
       rank_current[v] = rank_new;
       rank_next[v] = 0;
     }
@@ -395,11 +395,16 @@ typename GraphT::SizeT Validate_Results(
   v_counts = NULL;
 
   if (ref_node_ids != NULL && ref_ranks != NULL) {
-    double ref_total_rank = 0;
+    int ref_total_rank = 0;
     double max_diff = 0;
-    VertexT max_diff_pos = nodes;
+    // TODO: Temporary workaround, max_diff_pos if set to nodes
+    // ends up causing a SegFault when ref_node_id[max_diff_pos] = some random
+    // memory access, which could be greater than num_nodes. And later in the
+    // PrintMsg, we perform `unorder_ranks[ref_node_ids[max_diff_pos]]`, which
+    // is where the SegFault will happen randomly.
+    VertexT max_diff_pos = nodes-1;
     double max_rdiff = 0;
-    VertexT max_rdiff_pos = nodes;
+    VertexT max_rdiff_pos = nodes-1;
     for (VertexT v_ = 0; v_ < nodes; v_++) {
       VertexT v = ref_node_ids[v_];
       if (util::lessThanZero(v) || v >= nodes) {

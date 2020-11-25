@@ -78,6 +78,7 @@ cudaError_t RunTests(util::Parameters &parameters, GraphT &graph,
   total_timer.Start();
 
   // parse configurations from parameters
+  bool quick_mode = parameters.Get<bool>("quick");
   bool quiet = parameters.Get<bool>("quiet");
   int num_runs = parameters.Get<int>("num-runs");
   std::string validation = parameters.Get<std::string>("validation");
@@ -119,7 +120,7 @@ cudaError_t RunTests(util::Parameters &parameters, GraphT &graph,
             " ms, src = " + std::to_string(src) + ", #iterations = " +
             std::to_string(enactor.enactor_slices[0].enactor_stats.iteration),
         !quiet);
-    if (validation == "each") {
+    if (!quick_mode && validation == "each") {
       GUARD_CU(enactor.Extract());
       GUARD_CU(problem.Extract(h_node_ids, h_ranks));
       ValueT total_rank = 0;
@@ -137,7 +138,7 @@ cudaError_t RunTests(util::Parameters &parameters, GraphT &graph,
   }
 
   cpu_timer.Start();
-  if (validation == "last") {
+  if (!quick_mode && validation == "last") {
     // Copy out results
     GUARD_CU(enactor.Extract());
     GUARD_CU(problem.Extract(h_node_ids, h_ranks));
@@ -177,10 +178,10 @@ cudaError_t RunTests(util::Parameters &parameters, GraphT &graph,
   }
 
 // compute running statistics
-// info.ComputeTraversalStats(enactor, h_distances);
+info.ComputeTraversalStats(enactor, (VertexT *)NULL);
 // Display_Memory_Usage(problem);
 #ifdef ENABLE_PERFORMANCE_PROFILING
-  // Display_Performance_Profiling(enactor);
+  // Display_Performance_Profiling(&enactor);
 #endif
 
   // Clean up
@@ -269,7 +270,7 @@ double gunrock_pagerank(gunrock::util::Parameters &parameters, GraphT &graph,
  * @param[out] pagerank    Return PageRank scores per node
  * \return     double      Return accumulated elapsed times for all runs
  */
-template <typename VertexT = int, typename SizeT = int, typename ValueT = float>
+template <typename VertexT = int, typename SizeT = int, typename ValueT = int>
 double pagerank(const SizeT num_nodes, const SizeT num_edges,
                 const SizeT *row_offsets, const VertexT *col_indices,
                 const int num_runs, bool normalize, VertexT *sources,
@@ -342,7 +343,7 @@ double pagerank(const SizeT num_nodes, const SizeT num_edges,
  * @param[out] pagerank    Return PageRank scores per node
  * \return     double      Return accumulated elapsed times for all runs
  */
-template <typename VertexT = int, typename SizeT = int, typename ValueT = float>
+template <typename VertexT = int, typename SizeT = int, typename ValueT = int>
 double pagerank(const SizeT num_nodes, const SizeT num_edges,
                 const SizeT *row_offsets, const VertexT *col_indices,
                 bool normalize, VertexT source, VertexT *node_ids,
@@ -370,7 +371,7 @@ double pagerank(const SizeT num_nodes, const SizeT num_edges,
  */
 double pagerank(const int num_nodes, const int num_edges,
                 const int *row_offsets, const int *col_indices, bool normalize,
-                int *node_ids, float *ranks) {
+                int *node_ids, int *ranks) {
   return pagerank(num_nodes, num_edges, row_offsets, col_indices, normalize,
                   (int)-1 /* source */, node_ids, ranks);
 }

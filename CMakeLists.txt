@@ -50,7 +50,15 @@ endif()
 
 # begin /* Include Boost, OpenMP & Metis */
 include(${CMAKE_SOURCE_DIR}/cmake/FindBoostHeaders.cmake)
-include(${CMAKE_SOURCE_DIR}/cmake/FindBoost.cmake)
+
+SET(gunrock_REQUIRED_BOOST_VERSION 1.58)
+FIND_PACKAGE(Boost ${gunrock_REQUIRED_BOOST_VERSION} REQUIRED)
+INCLUDE_DIRECTORIES(${Boost_INCLUDE_DIRS})
+LINK_DIRECTORIES(${Boost_LIBRARY_DIRS})
+
+
+
+
 include(${CMAKE_SOURCE_DIR}/cmake/FindOpenMP.cmake)
 if (METIS_LIBRARY)
   include(${CMAKE_SOURCE_DIR}/cmake/FindMetis.cmake)

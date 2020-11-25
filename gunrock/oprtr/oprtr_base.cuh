@@ -50,10 +50,6 @@ static const util::io::ld::CacheModifier ROW_OFFSET_UNALIGNED_READ_MODIFIER =
 static const util::io::st::CacheModifier QUEUE_WRITE_MODIFIER =
     util::io::st::cg;
 
-#ifndef CUDA_ARCH
-static const int CUDA_ARCH = 300;  // CUDA_ARCH compiled for
-#endif
-
 /**
  * @brief Operator Modes
  */
@@ -117,6 +113,7 @@ enum : ReduceOp {
   ReduceOp_Xor = 0x80,
   ReduceOp_Max = 0x90,
   ReduceOp_Min = 0xA0,
+  ReduceOp_Binaryreduce = 0xB0,
 };
 
 using ReduceType = uint32_t;
@@ -265,6 +262,14 @@ struct Reduce<T, ReduceOp_Min> {
   }
 };
 
+template <typename T>
+struct Reduce<T, ReduceOp_Binaryreduce> {
+  static const T Identity = 0;
+
+  __device__ __host__ __forceinline__ static T op(const T &a, const T &b) {
+    return (a + b) % 2;
+  }
+};
 }  // namespace oprtr
 }  // namespace gunrock
 

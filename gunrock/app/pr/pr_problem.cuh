@@ -357,11 +357,8 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
       // GUARD_CU(degrees  .EnsureSize_(nodes, target));
 
       // Initial rank_next = 0
-      init_value = normalize ? (scale ? 1.0 : (1.0 / (ValueT)(org_nodes)))
-                             : (1.0 - delta);
-      reset_value = normalize ? (scale ? (1.0 - delta)
-                                       : ((1.0 - delta) / (ValueT)(org_nodes)))
-                              : (1.0 - delta);
+      init_value = 1;
+      reset_value = 1;
 
       bool &normalize = this->normalize;
       ValueT &delta = this->delta;
@@ -377,7 +374,7 @@ struct Problem : ProblemBase<_GraphT, _FLAG> {
           [init_value] __host__ __device__(ValueT * ranks, SizeT * degrees_,
                                            const SizeT &v) {
             SizeT degree = degrees_[v];
-            ranks[v] = (degree == 0) ? init_value : (init_value / degree);
+            ranks[v] = init_value;
             // if (v == 42029)
             //    printf("rank[%d] = %f = %f / %d\n",
             //       v, ranks[v], init_value, degree);

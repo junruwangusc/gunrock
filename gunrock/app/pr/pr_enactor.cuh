@@ -97,18 +97,15 @@ struct PRIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
           __device__(const VertexT &src, VertexT &dest, const SizeT &edge_id,
                      const VertexT &input_item, const SizeT &input_pos,
                      SizeT &output_pos) -> bool {
-        ValueT old_value = rank_curr[dest];
-        ValueT new_value = delta * rank_next[dest];
-        new_value = reset_value + new_value;
-        if (degrees[dest] != 0) new_value /= degrees[dest];
-        if (!isfinite(new_value)) new_value = 0;
+        //ValueT old_value = rank_curr[dest];
+        ValueT new_value = rank_next[dest];//delta * rank_next[dest];
+        //new_value = reset_value + new_value;
+        //if (degrees[dest] != 0) new_value /= degrees[dest];
+        //if (!isfinite(new_value)) new_value = 0;
         rank_curr[dest] = new_value;
-        // if (util::isTracking(dest))
-        //    printf("rank[%d] = %f -> %f = (%f + %f * %f) / %d\n",
-        //        dest, old_value, new_value, reset_value,
-        //        delta, rank_next[dest], degrees[dest]);
-        return (fabs(new_value - old_value) > (threshold * old_value));
-      };
+        //return (fabs(new_value - old_value) > (threshold * old_value));
+        return true
+      }
 
       frontier.queue_length = data_slice.local_vertices.GetSize();
       enactor_stats.nodes_queued[0] += frontier.queue_length;
@@ -130,7 +127,7 @@ struct PRIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
 
       if (!data_slice.pull) {
         GUARD_CU(rank_next.ForEach(
-            [] __host__ __device__(ValueT & rank) { rank = 0.0; }, graph.nodes,
+            [] __host__ __device__(ValueT & rank) { rank = 0; }, graph.nodes,
             util::DEVICE, oprtr_parameters.stream));
       }
 
@@ -159,10 +156,10 @@ struct PRIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
       frontier.queue_reset = true;
       GUARD_CU(oprtr::NeighborReduce<oprtr::OprtrType_V2V |
                                      oprtr::OprtrMode_REDUCE_TO_SRC |
-                                     oprtr::ReduceOp_Plus>(
+                                     oprtr::ReduceOp_Binaryreduce>(
           graph.csc(), null_ptr, null_ptr, oprtr_parameters, advance_op,
           [] __host__ __device__(const ValueT &a, const ValueT &b) {
-            return a + b;
+            return (a + b) % 2;
           },
           (ValueT)0));
     }
@@ -177,13 +174,11 @@ struct PRIterationLoop : public IterationLoopBase<EnactorT, Use_FullQ | Push> {
                             const SizeT &input_pos, SizeT &output_pos) -> bool {
         // printf("%d -> %d\n", src, dest);
         ValueT add_value = rank_curr[src];
-        if (isfinite(add_value)) {
           atomicAdd(rank_next + dest, add_value);
           // ValueT old_val = atomicAdd(rank_next + dest, add_value);
           // if (dest == 42029)
           //    printf("rank[%d] = %f = %f (rank[%d]) + %f\n",
           //        dest, old_val + add_value, add_value, src, old_val);
-        }
         return true;
       };
 
@@ -463,54 +458,7 @@ class Enactor : public EnactorBase<typename _Problem::GraphT,
     GUARD_CU(BaseEnactor::Reset(target));
 
     for (int gpu = 0; gpu < this->num_gpus; gpu++) {
-      /*thread_slices[gpu].status = ThreadSlice::Status::Wait;
-
-      if (retval = util::SetDevice(problem -> gpu_idx[gpu]))
-          return retval;
-      if (AdvanceKernelPolicy::ADVANCE_MODE ==
-      gunrock::oprtr::advance::TWC_FORWARD)
-      {
-          //return retval;
-      } else {
-          bool over_sized = false;
-          if (retval = Check_Size<SizeT, SizeT> (
-              this -> size_check, "scanned_edges",
-              problem -> data_slices[gpu] -> local_vertices.GetSize() + 2,
-              problem -> data_slices[gpu] -> scanned_edges,
-              over_sized, -1, -1, -1, false)) return retval;
-          this -> frontier_attribute [gpu * this -> num_gpus].queue_length
-              = problem -> data_slices[gpu] -> local_vertices.GetSize();
-
-          retval = gunrock::oprtr::advance::ComputeOutputLength
-              <AdvanceKernelPolicy, Problem, PRFunctor<VertexId, SizeT, Value,
-      Problem>, gunrock::oprtr::advance::V2V>( this -> frontier_attribute + gpu
-      * this -> num_gpus,//frontier_attribute, problem -> graph_slices[gpu] ->
-      row_offsets.GetPointer(util::DEVICE),//d_offsets, problem ->
-      graph_slices[gpu] -> column_indices.GetPointer(util::DEVICE),//d_indices,
-              (SizeT   *)NULL, ///d_inv_offsets,
-              (VertexId*)NULL,//d_inv_indices,
-              problem -> data_slices[gpu] ->
-      local_vertices.GetPointer(util::DEVICE),//d_in_key_queue, problem ->
-      data_slices[gpu] ->
-      scanned_edges[0].GetPointer(util::DEVICE),//partitioned_scanned_edges->GetPointer(util::DEVICE),
-              problem -> graph_slices[gpu] -> nodes,//max_in,
-              problem -> graph_slices[gpu] -> edges,//max_out,
-              thread_slices[gpu].context[0][0],
-              problem -> data_slices[gpu] -> streams[0],
-              //ADVANCE_TYPE,
-              false,
-              false,
-              false);
-
-          if (retval = this -> frontier_attribute[gpu * this ->
-      num_gpus].output_length.Move(util::DEVICE, util::HOST, 1, 0, problem ->
-      data_slices[gpu] -> streams[0])) return retval; if (retval =
-      util::GRError(cudaStreamSynchronize(problem -> data_slices[gpu] ->
-      streams[0]), "cudaStreamSynchronize failed", __FILE__, __LINE__)) return
-      retval;
-      }*/
-
-      for (int peer = 0; peer < this->num_gpus; peer++) {
+       for (int peer = 0; peer < this->num_gpus; peer++) {
         auto &frontier =
             this->enactor_slices[gpu * this->num_gpus + peer].frontier;
 
@@ -581,7 +529,6 @@ class Enactor : public EnactorBase<typename _Problem::GraphT,
                                                              const SizeT &pos) {
             VertexT v = vertices[pos];
             ValueT rank = rank_curr[v];
-            if (degrees[v] != 0) rank *= degrees[v];
             rank_out[pos] = rank;
           },
           data_slice.local_vertices.GetSize(), util::DEVICE, stream));
@@ -604,7 +551,6 @@ class Enactor : public EnactorBase<typename _Problem::GraphT,
                                                  const SizeT &pos) {
           VertexT v = vertices[pos];
           ValueT rank = rank_curr[v];
-          if (degrees[v] != 0) rank *= degrees[v];
           rank_curr[v] = rank;
         },
         data_slice.local_vertices.GetSize(), util::DEVICE, stream));
@@ -664,62 +610,7 @@ class Enactor : public EnactorBase<typename _Problem::GraphT,
         },
         nodes, util::DEVICE, this->enactor_slices[0].stream));
 
-    // util::PrintMsg("#nodes = " + std::to_string(nodes));
-    /*size_t cub_required_size = 0;
-    void* temp_storage = NULL;
-    cub::DoubleBuffer<ValueT > key_buffer(
-        data_slice.rank_curr.GetPointer(util::DEVICE),
-        data_slice.rank_next.GetPointer(util::DEVICE));
-    cub::DoubleBuffer<VertexT> value_buffer(
-        data_slice.node_ids   .GetPointer(util::DEVICE),
-        data_slice.temp_vertex.GetPointer(util::DEVICE));
-    GUARD_CU2(cub::DeviceRadixSort::SortPairsDescending(
-        temp_storage, cub_required_size,
-        key_buffer, value_buffer, nodes,
-        0, sizeof(ValueT) * 8, this -> enactor_slices[0].stream),
-        "cubDeviceRadixSort failed");
-    GUARD_CU(data_slice.cub_sort_storage.EnsureSize_(
-        cub_required_size, util::DEVICE));
 
-    GUARD_CU2(cudaDeviceSynchronize(),
-        "cudaDeviceSynchronize failed.");
-
-    printf("cub_sort_stoarge = %p, size = %d\n",
-        data_slice.cub_sort_storage.GetPointer(util::DEVICE),
-        data_slice.cub_sort_storage.GetSize());
-
-    // sort according to the rank of nodes
-    GUARD_CU2(cub::DeviceRadixSort::SortPairsDescending(
-        data_slice.cub_sort_storage.GetPointer(util::DEVICE),
-        cub_required_size,
-        key_buffer, value_buffer, nodes,
-        0, sizeof(ValueT) * 8, this -> enactor_slices[0].stream),
-        "cubDeviceRadixSort failed");
-
-    GUARD_CU2(cudaDeviceSynchronize(),
-        "cudaDeviceSynchronize failed.");
-
-    if (key_buffer.Current() != data_slice.rank_curr.GetPointer(util::DEVICE))
-    {
-        ValueT *keys = key_buffer.Current();
-        GUARD_CU(data_slice.rank_curr.ForEach(keys,
-            []__host__ __device__(ValueT &rank, const ValueT &key)
-            {
-                rank = key;
-            }, nodes, util::DEVICE, this -> enactor_slices[0].stream));
-    }
-
-    if (value_buffer.Current() != data_slice.node_ids.GetPointer(util::DEVICE))
-    {
-        VertexT *values = value_buffer.Current();
-        GUARD_CU(data_slice.node_ids.ForEach(values,
-            []__host__ __device__(VertexT &node_id, const VertexT &val)
-            {
-                node_id = val;
-            }, nodes, util::DEVICE, this -> enactor_slices[0].stream));
-    }*/
-
-    // util::Array1D<SizeT, char> cub_temp_space;
     GUARD_CU(util::cubSortPairsDescending(
         data_slice.cub_sort_storage, data_slice.rank_curr, data_slice.rank_next,
         data_slice.node_ids, data_slice.temp_vertex, nodes, 0,
@@ -740,7 +631,7 @@ class Enactor : public EnactorBase<typename _Problem::GraphT,
         nodes, util::DEVICE, this->enactor_slices[0].stream));
 
     if (data_slice.scale) {
-      ValueT a = 1.0 / (ValueT)nodes;
+      ValueT a = 1 / (ValueT)nodes;
       GUARD_CU(data_slice.rank_curr.ForEach(
           [a] __host__ __device__(ValueT & rank) { rank *= a; }, nodes,
           util::DEVICE, this->enactor_slices[0].stream));
